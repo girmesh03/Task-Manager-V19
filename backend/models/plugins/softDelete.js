@@ -26,7 +26,8 @@ const softDeletePlugin = function (schema, options = {}) {
 
   // Override find methods to exclude soft deleted documents by default
   const excludeDeleted = function () {
-    if (!this.getQuery().isDeleted) {
+    const query = this.getQuery();
+    if (!query.hasOwnProperty("isDeleted")) {
       this.where({ isDeleted: { $ne: true } });
     }
     return this;
