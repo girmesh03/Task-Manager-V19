@@ -113,9 +113,13 @@ app.get("/health", (req, res) => {
   });
 });
 
-// API routes will be added here
-// app.use('/api/auth', authLimiter, authRoutes);
-// app.use('/api', apiRoutes);
+// Import routes
+import authRoutes from "./routes/authRoutes.js";
+import organizationRoutes from "./routes/organizationRoutes.js";
+
+// API routes
+app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/organizations", organizationRoutes);
 
 // Handle 404 errors
 app.use(notFoundHandler);
