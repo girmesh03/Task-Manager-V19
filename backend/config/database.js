@@ -1,7 +1,5 @@
 import mongoose from "mongoose";
-import dotenv from "dotenv";
-
-dotenv.config();
+import { initializeTTLIndexes } from "./ttlIndexes.js";
 
 const connectDB = async () => {
   try {
@@ -13,6 +11,14 @@ const connectDB = async () => {
     });
 
     console.log(`🗄️  MongoDB Connected: ${conn.connection.host}`);
+
+    // Initialize TTL indexes for soft delete cleanup after connection is established
+    try {
+      await initializeTTLIndexes();
+    } catch (error) {
+      console.error("TTL index initialization failed:", error.message);
+      // Don't exit the process, just log the error as TTL indexes are not critical for basic functionality
+    }
 
     // Handle connection events
     mongoose.connection.on("error", (err) => {

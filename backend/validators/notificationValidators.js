@@ -9,13 +9,14 @@ import {
   objectIdExistsInOrganization,
   validators,
 } from "./validationMiddleware.js";
+import { NOTIFICATION_PRIORITY_ARRAY } from "../constants/index.js";
 import { VALIDATION_LIMITS } from "../constants/index.js";
 
 /**
  * Validation rules for notification ID parameter
  */
 export const validateNotificationId = [
-  param("id")
+  param("notificationId")
     .custom((value) => {
       if (!isValidObjectId(value)) {
         throw new Error("Invalid notification ID format");
@@ -81,8 +82,10 @@ export const validateCreateNotification = [
 
   body("priority")
     .optional()
-    .isIn(["low", "medium", "high", "urgent"])
-    .withMessage("Priority must be one of: low, medium, high, urgent"),
+    .isIn(NOTIFICATION_PRIORITY_ARRAY)
+    .withMessage(
+      `Priority must be one of: ${NOTIFICATION_PRIORITY_ARRAY.join(", ")}`
+    ),
 
   body("channels")
     .optional()
@@ -158,8 +161,10 @@ export const validateNotificationQuery = [
 
   query("priority")
     .optional()
-    .isIn(["low", "medium", "high", "urgent"])
-    .withMessage("Priority must be one of: low, medium, high, urgent"),
+    .isIn(NOTIFICATION_PRIORITY_ARRAY)
+    .withMessage(
+      `Priority must be one of: ${NOTIFICATION_PRIORITY_ARRAY.join(", ")}`
+    ),
 
   query("dateFrom")
     .optional()

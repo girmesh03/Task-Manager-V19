@@ -1,5 +1,13 @@
 import mongoose from "mongoose";
+import mongoosePaginate from "mongoose-paginate-v2";
 import softDeletePlugin from "./plugins/softDelete.js";
+import {
+  TASK_STATUS_ARRAY,
+  TASK_PRIORITY_ARRAY,
+  TASK_STATUS,
+  TASK_PRIORITY,
+} from "../constants/index.js";
+import { nowUTC, isFuture } from "../utils/timezoneUtils.js";
 
 // Base Task Schema with discriminator pattern
 const baseTaskSchema = new mongoose.Schema(
@@ -18,27 +26,26 @@ const baseTaskSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: {
-        values: ["To Do", "In Progress", "Completed", "On Hold"],
-        message:
-          "Status must be one of: To Do, In Progress, Completed, On Hold",
+        values: TASK_STATUS_ARRAY,
+        message: `Status must be one of: ${TASK_STATUS_ARRAY.join(", ")}`,
       },
       required: [true, "Status is required"],
-      default: "To Do",
+      default: TASK_STATUS.TO_DO,
     },
     priority: {
       type: String,
       enum: {
-        values: ["Low", "Medium", "High", "Critical"],
-        message: "Priority must be one of: Low, Medium, High, Critical",
+        values: TASK_PRIORITY_ARRAY,
+        message: `Priority must be one of: ${TASK_PRIORITY_ARRAY.join(", ")}`,
       },
       required: [true, "Priority is required"],
-      default: "Medium",
+      default: TASK_PRIORITY.MEDIUM,
     },
     dueDate: {
       type: Date,
       validate: {
         validator: function (value) {
-          return !value || value > new Date();
+          return !value || isFuture(value);
         },
         message: "Due date must be in the future",
       },
@@ -71,7 +78,8 @@ const baseTaskSchema = new mongoose.Schema(
   }
 );
 
-// Apply soft delete plugin with cascade options
+// Apply plugins
+baseTaskSchema.plugin(mongoosePaginate);
 baseTaskSchema.plugin(softDeletePlugin, {
   cascadeDelete: [
     { model: "TaskActivity", field: "task", deletedBy: true },
@@ -143,7 +151,9 @@ baseTaskSchema.statics.findByUser = function (userId, conditions = {}) {
 // Instance method to check if task is overdue
 baseTaskSchema.methods.isOverdue = function () {
   return (
-    this.dueDate && this.dueDate < new Date() && this.status !== "Completed"
+    this.dueDate &&
+    this.dueDate < nowUTC() &&
+    this.status !== TASK_STATUS.COMPLETED
   );
 };
 
@@ -178,15 +188,19 @@ const routineTaskSchema = new mongoose.Schema({
 // Pre-save validation for RoutineTask restrictions
 routineTaskSchema.pre("save", function (next) {
   // RoutineTask cannot have "To Do" status
-  if (this.status === "To Do") {
-    const error = new Error('RoutineTask cannot have "To Do" status');
+  if (this.status === TASK_STATUS.TO_DO) {
+    const error = new Error(
+      `RoutineTask cannot have "${TASK_STATUS.TO_DO}" status`
+    );
     error.code = "INVALID_ROUTINE_TASK_STATUS";
     return next(error);
   }
 
   // RoutineTask cannot have "Low" priority
-  if (this.priority === "Low") {
-    const error = new Error('RoutineTask cannot have "Low" priority');
+  if (this.priority === TASK_PRIORITY.LOW) {
+    const error = new Error(
+      `RoutineTask cannot have "${TASK_PRIORITY.LOW}" priority`
+    );
     error.code = "INVALID_ROUTINE_TASK_PRIORITY";
     return next(error);
   }
@@ -228,9 +242,9 @@ assignedTaskSchema.virtual("activities", {
 // Pre-save middleware to set completedAt when status changes to Completed
 assignedTaskSchema.pre("save", function (next) {
   if (this.isModified("status")) {
-    if (this.status === "Completed" && !this.completedAt) {
-      this.completedAt = new Date();
-    } else if (this.status !== "Completed") {
+    if (this.status === TASK_STATUS.COMPLETED && !this.completedAt) {
+      this.completedAt = nowUTC();
+    } else if (this.status !== TASK_STATUS.COMPLETED) {
       this.completedAt = null;
     }
   }
@@ -277,9 +291,9 @@ projectTaskSchema.virtual("activities", {
 // Pre-save middleware to set completedAt when status changes to Completed
 projectTaskSchema.pre("save", function (next) {
   if (this.isModified("status")) {
-    if (this.status === "Completed" && !this.completedAt) {
-      this.completedAt = new Date();
-    } else if (this.status !== "Completed") {
+    if (this.status === TASK_STATUS.COMPLETED && !this.completedAt) {
+      this.completedAt = nowUTC();
+    } else if (this.status !== TASK_STATUS.COMPLETED) {
       this.completedAt = null;
     }
   }

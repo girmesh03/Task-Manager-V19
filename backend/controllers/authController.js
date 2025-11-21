@@ -4,7 +4,6 @@
  */
 
 import asyncHandler from "express-async-handler";
-import mongoose from "mongoose";
 import User from "../models/User.js";
 import Organization from "../models/Organization.js";
 import Department from "../models/Department.js";
@@ -14,10 +13,10 @@ import {
   setAuthCookies,
   clearAuthCookies,
   extractTokensFromCookies,
-  verifyRefreshToken,
   refreshAccessToken,
 } from "../utils/jwtUtils.js";
 import { PLATFORM_ORGANIZATION_ID } from "../constants/index.js";
+import { extractUserContext } from "../utils/controllerHelpers.js";
 
 /**
  * Register new organization with SuperAdmin user
@@ -25,7 +24,7 @@ import { PLATFORM_ORGANIZATION_ID } from "../constants/index.js";
  * @route POST /api/auth/register
  * @access Public
  */
-export const registerOrganization = asyncHandler(async (req, res) => {
+export const registerOrganization = asyncHandler(async (req, res, next) => {
   const {
     // Organization fields
     organizationName,
@@ -48,32 +47,30 @@ export const registerOrganization = asyncHandler(async (req, res) => {
     profilePicture,
   } = req.body;
 
-  // Start database transaction for sequential creation
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     // Check if organization name already exists
     const existingOrgByName = await Organization.findOne({
       name: organizationName,
-      isDeleted: { $ne: true },
     }).lean();
 
     if (existingOrgByName) {
-      throw CustomError.conflict(
-        "Organization name already exists. Please choose a different name."
+      return next(
+        CustomError.conflict(
+          "Organization name already exists. Please choose a different name."
+        )
       );
     }
 
     // Check if organization email already exists
     const existingOrgByEmail = await Organization.findOne({
       email: organizationEmail.toLowerCase(),
-      isDeleted: { $ne: true },
     }).lean();
 
     if (existingOrgByEmail) {
-      throw CustomError.conflict(
-        "Organization email already exists. Please use a different email."
+      return next(
+        CustomError.conflict(
+          "Organization email already exists. Please use a different email."
+        )
       );
     }
 
@@ -90,9 +87,7 @@ export const registerOrganization = asyncHandler(async (req, res) => {
       createdBy: null, // Will be updated after user creation
     };
 
-    const [organization] = await Organization.create([organizationData], {
-      session,
-    });
+    const organization = await Organization.create(organizationData);
 
     // Step 2: Create Department
     const departmentData = {
@@ -102,18 +97,17 @@ export const registerOrganization = asyncHandler(async (req, res) => {
       createdBy: null, // Will be updated after user creation
     };
 
-    const [department] = await Department.create([departmentData], { session });
+    const department = await Department.create(departmentData);
 
     // Step 3: Check if user email already exists in this organization
     const existingUser = await User.findOne({
       email: email.toLowerCase(),
       organization: organization._id,
-      isDeleted: { $ne: true },
     }).lean();
 
     if (existingUser) {
-      throw CustomError.conflict(
-        "User email already exists in this organization."
+      return next(
+        CustomError.conflict("User email already exists in this organization.")
       );
     }
 
@@ -131,23 +125,16 @@ export const registerOrganization = asyncHandler(async (req, res) => {
       status: "offline",
     };
 
-    const [user] = await User.create([userData], { session });
+    const user = await User.create(userData);
 
     // Step 5: Update createdBy fields in Organization and Department
-    await Organization.findByIdAndUpdate(
-      organization._id,
-      { createdBy: user._id },
-      { session }
-    );
+    await Organization.findByIdAndUpdate(organization._id, {
+      createdBy: user._id,
+    });
 
-    await Department.findByIdAndUpdate(
-      department._id,
-      { createdBy: user._id },
-      { session }
-    );
-
-    // Commit transaction
-    await session.commitTransaction();
+    await Department.findByIdAndUpdate(department._id, {
+      createdBy: user._id,
+    });
 
     // Populate user data for response
     const populatedUser = await User.findById(user._id)
@@ -183,27 +170,26 @@ export const registerOrganization = asyncHandler(async (req, res) => {
       },
     });
   } catch (error) {
-    // Rollback transaction on error
-    await session.abortTransaction();
-
     if (error instanceof CustomError) {
-      throw error;
+      return next(error);
     }
 
     // Handle MongoDB duplicate key errors
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
-      throw CustomError.conflict(
-        `${field.charAt(0).toUpperCase() + field.slice(1)} already exists.`
+      return next(
+        CustomError.conflict(
+          `${field.charAt(0).toUpperCase() + field.slice(1)} already exists.`
+        )
       );
     }
 
     console.error("Organization registration error:", error);
-    throw CustomError.internalServer(
-      "Failed to register organization. Please try again."
+    return next(
+      CustomError.internalServer(
+        "Failed to register organization. Please try again."
+      )
     );
-  } finally {
-    session.endSession();
   }
 });
 
@@ -213,32 +199,39 @@ export const registerOrganization = asyncHandler(async (req, res) => {
  * @route POST /api/auth/login
  * @access Public
  */
-export const login = asyncHandler(async (req, res) => {
+export const login = asyncHandler(async (req, res, next) => {
   const { email, password, organizationId } = req.body;
 
   try {
     let user;
 
     if (organizationId) {
-      // Login with specific organization ID
+      // Login with specific organization ID - use the static authenticate method
       user = await User.authenticate(email, password, organizationId);
+
+      if (!user) {
+        return next(CustomError.unauthorized("Invalid email or password."));
+      }
     } else {
-      // Find user across all organizations (excluding platform org)
+      // Find users across all organizations (excluding platform org)
       const users = await User.find({
         email: email.toLowerCase(),
-        isDeleted: { $ne: true },
+        isDeleted: { $ne: true }, // Exclude soft-deleted users
       })
         .populate("organization", "name _id")
         .populate("department", "name _id")
         .select("+password");
 
-      // Filter out platform organization users for regular login
+      // Filter out platform organization users for regular login and deleted organizations
       const customerUsers = users.filter(
-        (u) => u.organization._id.toString() !== PLATFORM_ORGANIZATION_ID
+        (u) =>
+          u.organization &&
+          !u.organization.isDeleted &&
+          u.organization._id.toString() !== PLATFORM_ORGANIZATION_ID()
       );
 
       if (customerUsers.length === 0) {
-        throw CustomError.unauthorized("Invalid email or password.");
+        return next(CustomError.unauthorized("Invalid email or password."));
       }
 
       if (customerUsers.length > 1) {
@@ -256,26 +249,50 @@ export const login = asyncHandler(async (req, res) => {
         });
       }
 
-      // Single user found, authenticate
+      // Single user found, authenticate password
       const candidateUser = customerUsers[0];
       const isPasswordValid = await candidateUser.comparePassword(password);
 
       if (!isPasswordValid) {
-        throw CustomError.unauthorized("Invalid email or password.");
+        return next(CustomError.unauthorized("Invalid email or password."));
       }
 
       user = candidateUser;
+
+      // Update last login
       await user.updateLastLogin();
     }
 
-    if (!user) {
-      throw CustomError.unauthorized("Invalid email or password.");
+    // Ensure user object has populated organization and department for token generation
+    if (!user.organization || !user.department) {
+      // Re-populate if needed
+      user = await User.findById(user._id)
+        .populate("organization", "name _id")
+        .populate("department", "name _id")
+        .select("-password -refreshToken -refreshTokenExpiry");
+
+      if (!user) {
+        return next(CustomError.notFound("User not found."));
+      }
     }
 
-    // Remove password from user object
-    user.password = undefined;
+    // Final validation before token generation
+    if (!user.organization || !user.department) {
+      return next(
+        CustomError.internalServer("User organization or department not found.")
+      );
+    }
 
-    // Generate JWT tokens
+    // Verify user and related entities are not deleted
+    if (
+      user.isDeleted ||
+      user.organization?.isDeleted ||
+      user.department?.isDeleted
+    ) {
+      return next(CustomError.unauthorized("Account is deactivated."));
+    }
+
+    // Generate JWT tokens with properly populated user object
     const { accessToken, refreshToken } = generateTokenPair(user);
 
     // Set HTTP-only cookies
@@ -284,20 +301,28 @@ export const login = asyncHandler(async (req, res) => {
     // Update user status to online
     await user.updateStatus("online");
 
+    // Remove sensitive fields from response
+    const userResponse = {
+      ...user.toObject(),
+      password: undefined,
+      refreshToken: undefined,
+      refreshTokenExpiry: undefined,
+    };
+
     res.status(200).json({
       success: true,
       message: "Login successful",
       data: {
-        user,
+        user: userResponse,
       },
     });
   } catch (error) {
     if (error instanceof CustomError) {
-      throw error;
+      return next(error);
     }
 
     console.error("Login error:", error);
-    throw CustomError.internalServer("Login failed. Please try again.");
+    return next(CustomError.internalServer("Login failed. Please try again."));
   }
 });
 
@@ -307,7 +332,7 @@ export const login = asyncHandler(async (req, res) => {
  * @route POST /api/auth/logout
  * @access Private
  */
-export const logout = asyncHandler(async (req, res) => {
+export const logout = asyncHandler(async (req, res, next) => {
   try {
     // Update user status to offline if user is authenticated
     if (req.user) {
@@ -337,14 +362,16 @@ export const logout = asyncHandler(async (req, res) => {
  * @route POST /api/auth/refresh
  * @access Public (requires refresh token in cookies)
  */
-export const refreshToken = asyncHandler(async (req, res) => {
+export const refreshToken = asyncHandler(async (req, res, next) => {
   try {
     const { refreshToken: refreshTokenFromCookie } =
       extractTokensFromCookies(req);
 
     if (!refreshTokenFromCookie) {
-      throw CustomError.unauthorized(
-        "Refresh token not found. Please log in again."
+      return next(
+        CustomError.unauthorized(
+          "Refresh token not found. Please log in again."
+        )
       );
     }
 
@@ -368,7 +395,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
       user.organization?.isDeleted ||
       user.department?.isDeleted
     ) {
-      throw CustomError.unauthorized("User account is deactivated.");
+      return next(CustomError.unauthorized("User account is deactivated."));
     }
 
     // Set new access token cookie (refresh token remains the same)
@@ -389,12 +416,12 @@ export const refreshToken = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     if (error instanceof CustomError) {
-      throw error;
+      return next(error);
     }
 
     console.error("Token refresh error:", error);
-    throw CustomError.unauthorized(
-      "Token refresh failed. Please log in again."
+    return next(
+      CustomError.unauthorized("Token refresh failed. Please log in again.")
     );
   }
 });
@@ -404,7 +431,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
  * @route POST /api/auth/forgot-password
  * @access Public
  */
-export const forgotPassword = asyncHandler(async (req, res) => {
+export const forgotPassword = asyncHandler(async (req, res, next) => {
   const { email, organizationId } = req.body;
 
   try {
@@ -415,17 +442,15 @@ export const forgotPassword = asyncHandler(async (req, res) => {
       user = await User.findOne({
         email: email.toLowerCase(),
         organization: organizationId,
-        isDeleted: { $ne: true },
       }).populate("organization", "name");
     } else {
       // Find user across all customer organizations
       const users = await User.find({
         email: email.toLowerCase(),
-        isDeleted: { $ne: true },
       }).populate("organization", "name _id");
 
       const customerUsers = users.filter(
-        (u) => u.organization._id.toString() !== PLATFORM_ORGANIZATION_ID
+        (u) => u.organization._id.toString() !== PLATFORM_ORGANIZATION_ID()
       );
 
       if (customerUsers.length > 1) {
@@ -453,7 +478,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
       // 1. Generate secure reset token
       // 2. Store token with expiration in database
       // 3. Send email with reset link
-      console.log(`Password reset requested for user: ${user.email}`);
+      // Password reset requested - email would be sent in production
     }
 
     res.status(200).json({
@@ -477,31 +502,20 @@ export const forgotPassword = asyncHandler(async (req, res) => {
  * @route POST /api/auth/reset-password
  * @access Public
  */
-export const resetPassword = asyncHandler(async (req, res) => {
-  const { token, password } = req.body;
+export const resetPassword = asyncHandler(async (req, res, next) => {
+  // TODO: Implement password reset token validation
+  // This would typically involve:
+  // 1. Validate reset token from req.body
+  // 2. Check token expiration
+  // 3. Find user by token
+  // 4. Update password from req.body
+  // 5. Invalidate reset token
 
-  try {
-    // TODO: Implement password reset token validation
-    // This would typically involve:
-    // 1. Validate reset token
-    // 2. Check token expiration
-    // 3. Find user by token
-    // 4. Update password
-    // 5. Invalidate reset token
-
-    throw CustomError.badRequest(
+  return next(
+    CustomError.badRequest(
       "Password reset functionality is not yet implemented."
-    );
-  } catch (error) {
-    if (error instanceof CustomError) {
-      throw error;
-    }
-
-    console.error("Reset password error:", error);
-    throw CustomError.internalServer(
-      "Password reset failed. Please try again."
-    );
-  }
+    )
+  );
 });
 
 /**
@@ -523,14 +537,17 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
  * @route PUT /api/auth/me
  * @access Private
  */
-export const updateProfile = asyncHandler(async (req, res) => {
+export const updateProfile = asyncHandler(async (req, res, next) => {
+  // Standard pattern for tenant and caller identification
+  const { callerId } = extractUserContext(req);
+
   const { firstName, lastName, position, profilePicture } = req.body;
 
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(callerId);
 
     if (!user) {
-      throw CustomError.notFound("User not found.");
+      return next(CustomError.notFound("User not found."));
     }
 
     // Update allowed fields
@@ -556,12 +573,12 @@ export const updateProfile = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     if (error instanceof CustomError) {
-      throw error;
+      return next(error);
     }
 
     console.error("Update profile error:", error);
-    throw CustomError.internalServer(
-      "Failed to update profile. Please try again."
+    return next(
+      CustomError.internalServer("Failed to update profile. Please try again.")
     );
   }
 });

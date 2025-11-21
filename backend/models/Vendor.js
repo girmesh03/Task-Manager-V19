@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
+import mongoosePaginate from "mongoose-paginate-v2";
 import softDeletePlugin from "./plugins/softDelete.js";
+import { TASK_STATUS } from "../constants/index.js";
 
 const vendorSchema = new mongoose.Schema(
   {
@@ -80,7 +82,8 @@ const vendorSchema = new mongoose.Schema(
   }
 );
 
-// Apply soft delete plugin
+// Apply plugins
+vendorSchema.plugin(mongoosePaginate);
 vendorSchema.plugin(softDeletePlugin);
 // Compound index for unique vendor name within organization
 vendorSchema.index({ name: 1, organization: 1 }, { unique: true });
@@ -144,7 +147,6 @@ vendorSchema.statics.findByServiceCategory = function (
 vendorSchema.statics.findTopRated = function (organizationId, limit = 10) {
   return this.find({
     organization: organizationId,
-    isDeleted: { $ne: true },
   })
     .sort({ rating: -1, totalProjects: -1 })
     .limit(limit);
@@ -171,8 +173,9 @@ vendorSchema.methods.hasActiveProjects = async function () {
   const activeProjects = await mongoose.model("BaseTask").countDocuments({
     vendor: this._id,
     taskType: "ProjectTask",
-    status: { $in: ["To Do", "In Progress", "On Hold"] },
-    isDeleted: { $ne: true },
+    status: {
+      $in: [TASK_STATUS.TO_DO, TASK_STATUS.IN_PROGRESS, TASK_STATUS.ON_HOLD],
+    },
   });
   return activeProjects > 0;
 };

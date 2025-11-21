@@ -21,7 +21,7 @@ import {
  * Validation rules for attachment ID parameter
  */
 export const validateAttachmentId = [
-  param("id")
+  param("attachmentId")
     .custom((value) => {
       if (!isValidObjectId(value)) {
         throw new Error("Invalid attachment ID format");

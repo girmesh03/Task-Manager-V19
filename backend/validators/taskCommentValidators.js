@@ -15,7 +15,7 @@ import { VALIDATION_LIMITS } from "../constants/index.js";
  * Validation rules for task comment ID parameter
  */
 export const validateTaskCommentId = [
-  param("id")
+  param("taskCommentId")
     .custom((value) => {
       if (!isValidObjectId(value)) {
         throw new Error("Invalid task comment ID format");

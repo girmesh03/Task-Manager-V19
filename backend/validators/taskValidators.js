@@ -24,7 +24,7 @@ import {
  * Validation rules for task ID parameter
  */
 export const validateTaskId = [
-  param("id")
+  param("taskId")
     .custom((value) => {
       if (!isValidObjectId(value)) {
         throw new Error("Invalid task ID format");

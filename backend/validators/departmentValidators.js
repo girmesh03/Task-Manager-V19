@@ -16,7 +16,7 @@ import { VALIDATION_LIMITS, REGEX_PATTERNS } from "../constants/index.js";
  * Validation rules for department ID parameter
  */
 export const validateDepartmentId = [
-  param("id")
+  param("departmentId")
     .custom((value) => {
       if (!isValidObjectId(value)) {
         throw new Error("Invalid department ID format");

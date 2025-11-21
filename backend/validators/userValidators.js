@@ -23,7 +23,7 @@ import {
  * Validation rules for user ID parameter
  */
 export const validateUserId = [
-  param("id")
+  param("userId")
     .custom((value) => {
       if (!isValidObjectId(value)) {
         throw new Error("Invalid user ID format");
@@ -61,8 +61,14 @@ const validateHODPosition = async (value, { req }) => {
   };
 
   // Exclude current user from check (for updates)
-  if (req.params && req.params.id && isValidObjectId(req.params.id)) {
-    query._id = { $ne: req.params.id };
+  if (req.params) {
+    // Check for any ID parameter in params and use it for exclusion
+    const idParam = Object.keys(req.params).find(
+      (key) => key.endsWith("Id") && isValidObjectId(req.params[key])
+    );
+    if (idParam) {
+      query._id = { $ne: req.params[idParam] };
+    }
   }
 
   const existingUser = await User.findOne(query);

@@ -316,9 +316,7 @@ const broadcastStatusChange = async (
     const deptRoom = `dept_${user.department._id}`;
     socketIO.to(deptRoom).emit("userStatusChange", statusUpdate);
 
-    console.log(
-      `Broadcasted status change for user ${user._id}: ${previousStatus} -> ${newStatus}`
-    );
+    // Status change broadcasted successfully
   } catch (error) {
     console.error("Error broadcasting status change:", error);
   }
@@ -354,15 +352,13 @@ export const initializeStatusTracking = (socketIO) => {
   setInterval(async () => {
     try {
       const inactiveCount = await checkInactiveUsers(socketIO);
-      if (inactiveCount > 0) {
-        console.log(`Set ${inactiveCount} inactive users to away status`);
-      }
+      // Inactive users processed
     } catch (error) {
       console.error("Error in periodic inactive user check:", error);
     }
   }, 5 * 60 * 1000); // 5 minutes
 
-  console.log("User status tracking system initialized");
+  // User status tracking system initialized
 };
 
 /**

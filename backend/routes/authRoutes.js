@@ -45,11 +45,11 @@ router.post(
 router.post("/login", validateLogin, handleValidationErrors, login);
 
 /**
- * @route   POST /api/auth/logout
+ * @route   DELETE /api/auth/logout
  * @desc    Logout user and clear cookies
  * @access  Public (but uses optional auth to update user status)
  */
-router.post("/logout", optionalAuth, logout);
+router.delete("/logout", optionalAuth, logout);
 
 /**
  * @route   POST /api/auth/refresh

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import mongoosePaginate from "mongoose-paginate-v2";
 import softDeletePlugin from "./plugins/softDelete.js";
 
 const departmentSchema = new mongoose.Schema(
@@ -33,7 +34,8 @@ const departmentSchema = new mongoose.Schema(
   }
 );
 
-// Apply soft delete plugin with cascade options
+// Apply plugins
+departmentSchema.plugin(mongoosePaginate);
 departmentSchema.plugin(softDeletePlugin, {
   cascadeDelete: [
     { model: "User", field: "department", deletedBy: true },
@@ -76,7 +78,6 @@ departmentSchema.virtual("tasks", {
 departmentSchema.pre("remove", async function (next) {
   const userCount = await mongoose.model("User").countDocuments({
     department: this._id,
-    isDeleted: { $ne: true },
   });
 
   if (userCount > 0) {
@@ -107,7 +108,6 @@ departmentSchema.statics.nameExistsInOrganization = async function (
   const query = {
     name: name,
     organization: organizationId,
-    isDeleted: { $ne: true },
   };
 
   if (excludeId) {
@@ -122,7 +122,6 @@ departmentSchema.statics.nameExistsInOrganization = async function (
 departmentSchema.methods.hasUsers = async function () {
   const userCount = await mongoose.model("User").countDocuments({
     department: this._id,
-    isDeleted: { $ne: true },
   });
   return userCount > 0;
 };
@@ -132,7 +131,6 @@ departmentSchema.methods.getHOD = function () {
   return mongoose.model("User").findOne({
     department: this._id,
     role: { $in: ["SuperAdmin", "Admin"] },
-    isDeleted: { $ne: true },
   });
 };
 

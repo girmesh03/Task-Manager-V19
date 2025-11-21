@@ -8,6 +8,7 @@ import {
   Organization,
   Department,
 } from "../models/index.js";
+import { USER_ROLES_ARRAY } from "../constants/index.js";
 
 describe("Data Models Property Tests", () => {
   /**
@@ -30,7 +31,7 @@ describe("Data Models Property Tests", () => {
             password: fc
               .string({ minLength: 8, maxLength: 50 })
               .filter((s) => s.trim().length >= 8),
-            role: fc.constantFrom("SuperAdmin", "Admin", "Manager", "User"),
+            role: fc.constantFrom(...USER_ROLES_ARRAY),
             position: fc
               .string({ minLength: 2, maxLength: 100 })
               .filter((s) => s.trim().length >= 2),
@@ -271,12 +272,12 @@ describe("Data Models Property Tests", () => {
             });
             await vendor.save();
 
-            expect(vendor.name).toBe(vendorData.name);
-            expect(vendor.contactPerson).toBe(vendorData.contactPerson);
+            expect(vendor.name).toBe(vendorData.name.trim());
+            expect(vendor.contactPerson).toBe(vendorData.contactPerson.trim());
             expect(vendor.email).toBe(vendorData.email.toLowerCase());
             expect(vendor.phone).toBe(vendorData.phone);
             expect(vendor.serviceCategories).toEqual(
-              vendorData.serviceCategories
+              vendorData.serviceCategories.map((cat) => cat.trim())
             );
 
             // Test missing required fields

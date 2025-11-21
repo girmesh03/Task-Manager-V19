@@ -182,7 +182,6 @@ attachmentSchema.statics.getStorageStats = async function (organizationId) {
     {
       $match: {
         organization: mongoose.Types.ObjectId(organizationId),
-        isDeleted: { $ne: true },
       },
     },
     {

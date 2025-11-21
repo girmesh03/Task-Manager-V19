@@ -1,6 +1,13 @@
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
+import mongoosePaginate from "mongoose-paginate-v2";
 import softDeletePlugin from "./plugins/softDelete.js";
+import {
+  USER_ROLES_ARRAY,
+  USER_STATUS_ARRAY,
+  PLATFORM_ORGANIZATION_ID,
+} from "../constants/index.js";
+import { nowUTC } from "../utils/timezoneUtils.js";
 
 const userSchema = new mongoose.Schema(
   {
@@ -35,8 +42,8 @@ const userSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: {
-        values: ["SuperAdmin", "Admin", "Manager", "User"],
-        message: "Role must be one of: SuperAdmin, Admin, Manager, User",
+        values: USER_ROLES_ARRAY,
+        message: `Role must be one of: ${USER_ROLES_ARRAY.join(", ")}`,
       },
       required: [true, "Role is required"],
       default: "User",
@@ -55,8 +62,8 @@ const userSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: {
-        values: ["online", "offline", "away"],
-        message: "Status must be one of: online, offline, away",
+        values: USER_STATUS_ARRAY,
+        message: `Status must be one of: ${USER_STATUS_ARRAY.join(", ")}`,
       },
       default: "offline",
     },
@@ -100,7 +107,8 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Apply soft delete plugin
+// Apply plugins
+userSchema.plugin(mongoosePaginate);
 userSchema.plugin(softDeletePlugin);
 
 // Compound indexes for better query performance and constraints
@@ -176,12 +184,12 @@ userSchema.methods.isHOD = function () {
 
 // Instance method to check if user is platform admin
 userSchema.methods.isPlatformAdmin = function () {
-  return this.organization.toString() === "000000000000000000000000";
+  return this.organization.toString() === PLATFORM_ORGANIZATION_ID();
 };
 
 // Instance method to update last login
 userSchema.methods.updateLastLogin = function () {
-  this.lastLogin = new Date();
+  this.lastLogin = nowUTC();
   return this.save();
 };
 
@@ -215,7 +223,6 @@ userSchema.statics.findHODsInDepartment = function (departmentId) {
   return this.find({
     department: departmentId,
     role: { $in: ["SuperAdmin", "Admin"] },
-    isDeleted: { $ne: true },
   });
 };
 
@@ -229,7 +236,6 @@ userSchema.statics.authenticate = async function (
     const user = await this.findOne({
       email: email.toLowerCase(),
       organization: organizationId,
-      isDeleted: { $ne: true },
     })
       .select("+password")
       .populate("organization department");

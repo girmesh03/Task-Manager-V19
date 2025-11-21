@@ -197,8 +197,30 @@ describe("Validation System Property Tests", () => {
       await fc.assert(
         fc.property(
           fc.oneof(
-            // Valid ObjectIds
-            fc.hexaString({ minLength: 24, maxLength: 24 }),
+            // Valid ObjectIds - generate 24 character hex strings
+            fc
+              .array(
+                fc.constantFrom(
+                  "0",
+                  "1",
+                  "2",
+                  "3",
+                  "4",
+                  "5",
+                  "6",
+                  "7",
+                  "8",
+                  "9",
+                  "a",
+                  "b",
+                  "c",
+                  "d",
+                  "e",
+                  "f"
+                ),
+                { minLength: 24, maxLength: 24 }
+              )
+              .map((arr) => arr.join("")),
             // Invalid ObjectIds
             fc
               .string()

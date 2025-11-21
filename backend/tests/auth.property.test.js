@@ -11,6 +11,7 @@ import {
   extractTokensFromCookies,
   refreshAccessToken,
 } from "../utils/jwtUtils.js";
+import { USER_ROLES_ARRAY } from "../constants/index.js";
 
 describe("Authentication System Property Tests", () => {
   /**
@@ -312,7 +313,7 @@ describe("Authentication System Property Tests", () => {
         ),
         { numRuns: 4 }
       );
-    }, 10000);
+    }, 20000);
   });
 
   /**

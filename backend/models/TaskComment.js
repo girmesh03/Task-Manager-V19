@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import mongoosePaginate from "mongoose-paginate-v2";
 import softDeletePlugin from "./plugins/softDelete.js";
 
 const taskCommentSchema = new mongoose.Schema(
@@ -81,7 +82,8 @@ const taskCommentSchema = new mongoose.Schema(
   }
 );
 
-// Apply soft delete plugin
+// Apply plugins
+taskCommentSchema.plugin(mongoosePaginate);
 taskCommentSchema.plugin(softDeletePlugin, {
   cascadeDelete: [
     { model: "TaskComment", field: "parentComment", deletedBy: true }, // Delete child comments

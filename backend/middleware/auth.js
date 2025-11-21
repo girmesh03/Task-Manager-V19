@@ -5,6 +5,7 @@ import {
   verifyAccessToken,
   extractTokensFromCookies,
 } from "../utils/jwtUtils.js";
+import { PLATFORM_ORGANIZATION_ID } from "../constants/index.js";
 
 /**
  * Authentication Middleware
@@ -245,18 +246,17 @@ export const requireFreshToken = (maxAgeMinutes = 30) => {
  */
 export const requirePlatformAdmin = (req, res, next) => {
   if (!req.user) {
-    throw CustomError.unauthorized("Authentication required.");
+    return next(CustomError.unauthorized("Authentication required."));
   }
 
-  const PLATFORM_ORGANIZATION_ID =
-    process.env.PLATFORM_ORGANIZATION_ID || "000000000000000000000000";
-
-  if (req.user.organization._id.toString() !== PLATFORM_ORGANIZATION_ID) {
-    throw CustomError.forbidden("Platform administrator access required.");
+  if (req.user.organization._id.toString() !== PLATFORM_ORGANIZATION_ID()) {
+    return next(
+      CustomError.forbidden("Platform administrator access required.")
+    );
   }
 
   if (req.user.role !== "SuperAdmin") {
-    throw CustomError.forbidden("Platform SuperAdmin role required.");
+    return next(CustomError.forbidden("Platform SuperAdmin role required."));
   }
 
   next();

@@ -10,6 +10,7 @@ import {
   HTTP_STATUS,
   ERROR_CODES,
   REGEX_PATTERNS,
+  VALIDATION_LIMITS,
   USER_ROLES_ARRAY,
   USER_STATUS_ARRAY,
   ORGANIZATION_SIZES_ARRAY,
@@ -23,6 +24,7 @@ import {
   ATTACHMENT_MODELS_ARRAY,
   ALLOWED_FILE_TYPES,
 } from "../constants/index.js";
+import { isFuture } from "../utils/timezoneUtils.js";
 
 /**
  * Main validation middleware that processes validation results
@@ -319,8 +321,14 @@ export const isUniqueInOrganization = (model, field, excludeId = null) => {
     // Exclude current document from uniqueness check (for updates)
     if (excludeId && isValidObjectId(excludeId)) {
       query._id = { $ne: excludeId };
-    } else if (req.params && req.params.id && isValidObjectId(req.params.id)) {
-      query._id = { $ne: req.params.id };
+    } else if (req.params) {
+      // Check for any ID parameter in params and use it for exclusion
+      const idParam = Object.keys(req.params).find(
+        (key) => key.endsWith("Id") && isValidObjectId(req.params[key])
+      );
+      if (idParam) {
+        query._id = { $ne: req.params[idParam] };
+      }
     }
 
     const existing = await Model.findOne(query);
@@ -355,8 +363,14 @@ export const isUniqueInDepartment = (model, field, excludeId = null) => {
     // Exclude current document from uniqueness check (for updates)
     if (excludeId && isValidObjectId(excludeId)) {
       query._id = { $ne: excludeId };
-    } else if (req.params && req.params.id && isValidObjectId(req.params.id)) {
-      query._id = { $ne: req.params.id };
+    } else if (req.params) {
+      // Check for any ID parameter in params and use it for exclusion
+      const idParam = Object.keys(req.params).find(
+        (key) => key.endsWith("Id") && isValidObjectId(req.params[key])
+      );
+      if (idParam) {
+        query._id = { $ne: req.params[idParam] };
+      }
     }
 
     const existing = await Model.findOne(query);
@@ -374,13 +388,10 @@ export const isUniqueInDepartment = (model, field, excludeId = null) => {
  * @returns {boolean} - True if password meets requirements
  */
 export const isStrongPassword = (value) => {
-  // At least 8 characters, 1 uppercase, 1 lowercase, 1 number, 1 special character
-  const strongPasswordRegex =
-    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-
-  if (!strongPasswordRegex.test(value)) {
+  // Use regex pattern from constants
+  if (!REGEX_PATTERNS.PASSWORD.test(value)) {
     throw new Error(
-      "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character"
+      `Password must be at least ${VALIDATION_LIMITS.PASSWORD_MIN} characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character`
     );
   }
 
@@ -393,10 +404,7 @@ export const isStrongPassword = (value) => {
  * @returns {boolean} - True if date is in the future
  */
 export const isFutureDate = (value) => {
-  const date = new Date(value);
-  const now = new Date();
-
-  if (date <= now) {
+  if (!isFuture(value)) {
     throw new Error("Date must be in the future");
   }
 

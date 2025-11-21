@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import mongoosePaginate from "mongoose-paginate-v2";
 import softDeletePlugin from "./plugins/softDelete.js";
 
 const materialSchema = new mongoose.Schema(
@@ -82,7 +83,8 @@ const materialSchema = new mongoose.Schema(
   }
 );
 
-// Apply soft delete plugin
+// Apply plugins
+materialSchema.plugin(mongoosePaginate);
 materialSchema.plugin(softDeletePlugin);
 // Compound index for unique material name within organization
 materialSchema.index({ name: 1, organization: 1 }, { unique: true });

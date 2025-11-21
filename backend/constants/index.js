@@ -3,8 +3,15 @@
  * Centralized constants for the Task Manager SaaS application
  */
 
-// Platform Organization ID
-export const PLATFORM_ORGANIZATION_ID = "000000000000000000000000";
+// Platform Organization ID - lazy evaluation to ensure env vars are loaded
+let _platformOrgId = null;
+export const PLATFORM_ORGANIZATION_ID = () => {
+  if (_platformOrgId === null) {
+    _platformOrgId =
+      process.env.PLATFORM_ORGANIZATION_ID || "000000000000000000000000";
+  }
+  return _platformOrgId;
+};
 
 // User Roles
 export const USER_ROLES = {
@@ -73,6 +80,16 @@ export const TASK_FREQUENCY = {
 
 export const TASK_FREQUENCY_ARRAY = Object.values(TASK_FREQUENCY);
 
+// Task Activity Status
+export const TASK_ACTIVITY_STATUS = {
+  NOT_STARTED: "Not Started",
+  IN_PROGRESS: "In Progress",
+  COMPLETED: "Completed",
+  BLOCKED: "Blocked",
+};
+
+export const TASK_ACTIVITY_STATUS_ARRAY = Object.values(TASK_ACTIVITY_STATUS);
+
 // Notification Types
 export const NOTIFICATION_TYPES = {
   TASK_ASSIGNED: "task_assigned",
@@ -93,6 +110,16 @@ export const NOTIFICATION_STATUS = {
 };
 
 export const NOTIFICATION_STATUS_ARRAY = Object.values(NOTIFICATION_STATUS);
+
+// Notification Priority
+export const NOTIFICATION_PRIORITY = {
+  LOW: "low",
+  MEDIUM: "medium",
+  HIGH: "high",
+  URGENT: "urgent",
+};
+
+export const NOTIFICATION_PRIORITY_ARRAY = Object.values(NOTIFICATION_PRIORITY);
 
 // Attachment Types
 export const ATTACHMENT_TYPES = {
@@ -349,10 +376,14 @@ export default {
   TASK_TYPES_ARRAY,
   TASK_FREQUENCY,
   TASK_FREQUENCY_ARRAY,
+  TASK_ACTIVITY_STATUS,
+  TASK_ACTIVITY_STATUS_ARRAY,
   NOTIFICATION_TYPES,
   NOTIFICATION_TYPES_ARRAY,
   NOTIFICATION_STATUS,
   NOTIFICATION_STATUS_ARRAY,
+  NOTIFICATION_PRIORITY,
+  NOTIFICATION_PRIORITY_ARRAY,
   ATTACHMENT_TYPES,
   ATTACHMENT_TYPES_ARRAY,
   ATTACHMENT_MODELS,

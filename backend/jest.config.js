@@ -14,4 +14,9 @@ export default {
   ],
   setupFilesAfterEnv: ["<rootDir>/tests/setup.js"],
   testTimeout: 30000,
+  preset: null,
+  moduleFileExtensions: ["js", "json"],
+  testPathIgnorePatterns: ["/node_modules/"],
+  verbose: false,
+  silent: false,
 };

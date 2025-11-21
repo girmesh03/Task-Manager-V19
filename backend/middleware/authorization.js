@@ -1,4 +1,5 @@
 import CustomError from "../utils/CustomError.js";
+import { PLATFORM_ORGANIZATION_ID } from "../constants/index.js";
 
 /**
  * Authorization Middleware
@@ -90,9 +91,6 @@ const AUTHORIZATION_MATRIX = {
  * @returns {string} Scope level: 'own', 'ownDept', 'crossDept', 'crossOrg'
  */
 const determineScopeLevel = (user, targetResource, resourceType) => {
-  const PLATFORM_ORGANIZATION_ID =
-    process.env.PLATFORM_ORGANIZATION_ID || "000000000000000000000000";
-
   // Handle different resource structures
   let targetUserId, targetOrgId, targetDeptId;
 
@@ -129,7 +127,7 @@ const determineScopeLevel = (user, targetResource, resourceType) => {
   const userId = user._id.toString();
 
   // Check if user is platform admin
-  const isPlatformAdmin = userOrgId === PLATFORM_ORGANIZATION_ID;
+  const isPlatformAdmin = userOrgId === PLATFORM_ORGANIZATION_ID();
 
   // Own resource (user owns the resource)
   if (targetUserId && targetUserId === userId) {

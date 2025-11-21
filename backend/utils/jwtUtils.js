@@ -7,19 +7,20 @@ import CustomError from "./CustomError.js";
  * Supports access/refresh token pattern with HTTP-only cookie storage
  */
 
-// Token configuration
-const ACCESS_TOKEN_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || "1d";
-const REFRESH_TOKEN_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || "7d";
-const ACCESS_TOKEN_SECRET = process.env.JWT_ACCESS_SECRET;
-const REFRESH_TOKEN_SECRET = process.env.JWT_REFRESH_SECRET;
+// Token configuration - use getters to ensure env vars are loaded when accessed
+const getAccessTokenExpiresIn = () => process.env.JWT_ACCESS_EXPIRES_IN || "1d";
+const getRefreshTokenExpiresIn = () =>
+  process.env.JWT_REFRESH_EXPIRES_IN || "7d";
+const getAccessTokenSecret = () => process.env.JWT_ACCESS_SECRET;
+const getRefreshTokenSecret = () => process.env.JWT_REFRESH_SECRET;
 
-// Cookie configuration
-const COOKIE_OPTIONS = {
+// Cookie configuration - use getter to ensure env vars are loaded
+const getCookieOptions = () => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
   sameSite: "strict",
   path: "/",
-};
+});
 
 /**
  * Generate JWT access token
@@ -27,12 +28,13 @@ const COOKIE_OPTIONS = {
  * @returns {string} JWT access token
  */
 export const generateAccessToken = (payload) => {
-  if (!ACCESS_TOKEN_SECRET) {
+  const accessTokenSecret = getAccessTokenSecret();
+  if (!accessTokenSecret) {
     throw CustomError.internalServer("JWT access secret not configured");
   }
 
-  return jwt.sign(payload, ACCESS_TOKEN_SECRET, {
-    expiresIn: ACCESS_TOKEN_EXPIRES_IN,
+  return jwt.sign(payload, accessTokenSecret, {
+    expiresIn: getAccessTokenExpiresIn(),
     issuer: "task-manager-saas",
     audience: "task-manager-users",
   });
@@ -44,12 +46,13 @@ export const generateAccessToken = (payload) => {
  * @returns {string} JWT refresh token
  */
 export const generateRefreshToken = (payload) => {
-  if (!REFRESH_TOKEN_SECRET) {
+  const refreshTokenSecret = getRefreshTokenSecret();
+  if (!refreshTokenSecret) {
     throw CustomError.internalServer("JWT refresh secret not configured");
   }
 
-  return jwt.sign(payload, REFRESH_TOKEN_SECRET, {
-    expiresIn: REFRESH_TOKEN_EXPIRES_IN,
+  return jwt.sign(payload, refreshTokenSecret, {
+    expiresIn: getRefreshTokenExpiresIn(),
     issuer: "task-manager-saas",
     audience: "task-manager-users",
   });
@@ -61,12 +64,37 @@ export const generateRefreshToken = (payload) => {
  * @returns {Object} Object containing access and refresh tokens
  */
 export const generateTokenPair = (user) => {
+  // Validate required user fields
+  if (!user._id || !user.email || !user.role) {
+    throw CustomError.internalServer("Invalid user data for token generation");
+  }
+
+  // Handle organization ID - could be populated object or ObjectId
+  let organizationId;
+  if (user.organization) {
+    organizationId = user.organization._id || user.organization;
+  } else {
+    throw CustomError.internalServer(
+      "User organization is required for token generation"
+    );
+  }
+
+  // Handle department ID - could be populated object or ObjectId
+  let departmentId;
+  if (user.department) {
+    departmentId = user.department._id || user.department;
+  } else {
+    throw CustomError.internalServer(
+      "User department is required for token generation"
+    );
+  }
+
   const payload = {
     userId: user._id,
     email: user.email,
     role: user.role,
-    organizationId: user.organization._id || user.organization,
-    departmentId: user.department._id || user.department,
+    organizationId: organizationId.toString(),
+    departmentId: departmentId.toString(),
   };
 
   const accessToken = generateAccessToken(payload);
@@ -86,12 +114,13 @@ export const verifyAccessToken = (token) => {
     throw CustomError.unauthorized("Access token is required");
   }
 
-  if (!ACCESS_TOKEN_SECRET) {
+  const accessTokenSecret = getAccessTokenSecret();
+  if (!accessTokenSecret) {
     throw CustomError.internalServer("JWT access secret not configured");
   }
 
   try {
-    return jwt.verify(token, ACCESS_TOKEN_SECRET, {
+    return jwt.verify(token, accessTokenSecret, {
       issuer: "task-manager-saas",
       audience: "task-manager-users",
     });
@@ -117,12 +146,13 @@ export const verifyRefreshToken = (token) => {
     throw CustomError.unauthorized("Refresh token is required");
   }
 
-  if (!REFRESH_TOKEN_SECRET) {
+  const refreshTokenSecret = getRefreshTokenSecret();
+  if (!refreshTokenSecret) {
     throw CustomError.internalServer("JWT refresh secret not configured");
   }
 
   try {
-    return jwt.verify(token, REFRESH_TOKEN_SECRET, {
+    return jwt.verify(token, refreshTokenSecret, {
       issuer: "task-manager-saas",
       audience: "task-manager-users",
     });
@@ -145,18 +175,19 @@ export const verifyRefreshToken = (token) => {
  */
 export const setAuthCookies = (res, accessToken, refreshToken) => {
   // Calculate cookie expiration times
-  const accessTokenMaxAge = getTokenExpirationMs(ACCESS_TOKEN_EXPIRES_IN);
-  const refreshTokenMaxAge = getTokenExpirationMs(REFRESH_TOKEN_EXPIRES_IN);
+  const accessTokenMaxAge = getTokenExpirationMs(getAccessTokenExpiresIn());
+  const refreshTokenMaxAge = getTokenExpirationMs(getRefreshTokenExpiresIn());
+  const cookieOptions = getCookieOptions();
 
   // Set access token cookie
   res.cookie("accessToken", accessToken, {
-    ...COOKIE_OPTIONS,
+    ...cookieOptions,
     maxAge: accessTokenMaxAge,
   });
 
   // Set refresh token cookie
   res.cookie("refreshToken", refreshToken, {
-    ...COOKIE_OPTIONS,
+    ...cookieOptions,
     maxAge: refreshTokenMaxAge,
   });
 };
@@ -166,8 +197,9 @@ export const setAuthCookies = (res, accessToken, refreshToken) => {
  * @param {Object} res - Express response object
  */
 export const clearAuthCookies = (res) => {
-  res.clearCookie("accessToken", COOKIE_OPTIONS);
-  res.clearCookie("refreshToken", COOKIE_OPTIONS);
+  const cookieOptions = getCookieOptions();
+  res.clearCookie("accessToken", cookieOptions);
+  res.clearCookie("refreshToken", cookieOptions);
 };
 
 /**

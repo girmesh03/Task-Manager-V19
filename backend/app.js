@@ -1,3 +1,6 @@
+// Configure timezone to UTC for consistent date handling
+process.env.TZ = "UTC";
+
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
@@ -6,14 +9,20 @@ import rateLimit from "express-rate-limit";
 import mongoSanitize from "express-mongo-sanitize";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
-import dotenv from "dotenv";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
+import timezone from "dayjs/plugin/timezone.js";
+
+// Configure dayjs with UTC and timezone plugins
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 // Import custom middleware and utilities
 import { globalErrorHandler } from "./middleware/errorHandler.js";
 import { notFoundHandler } from "./middleware/notFoundHandler.js";
 
-// Load environment variables
-dotenv.config();
+// Import routes
+import routes from "./routes/index.js";
 
 const app = express();
 
@@ -97,11 +106,13 @@ app.use(mongoSanitize());
 app.use(compression());
 
 // Logging middleware
-if (process.env.NODE_ENV === "development") {
-  app.use(morgan("dev"));
-} else {
-  app.use(morgan("combined"));
-}
+// if (process.env.NODE_ENV === "development") {
+//   app.use(morgan("dev"));
+// } else {
+//   app.use(morgan("combined"));
+// }
+
+if (process.env.NODE_ENV === "development") app.use(morgan("dev"));
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -113,13 +124,8 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Import routes
-import authRoutes from "./routes/authRoutes.js";
-import organizationRoutes from "./routes/organizationRoutes.js";
-
 // API routes
-app.use("/api/auth", authLimiter, authRoutes);
-app.use("/api/organizations", organizationRoutes);
+app.use("/api", routes);
 
 // Handle 404 errors
 app.use(notFoundHandler);

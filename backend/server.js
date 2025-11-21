@@ -1,11 +1,17 @@
+// Load environment variables first - MUST be at the very top
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+dotenv.config({ path: join(__dirname, ".env") });
+
 import app from "./app.js";
 import connectDB from "./config/database.js";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import dotenv from "dotenv";
-
-// Load environment variables
-dotenv.config();
 
 const PORT = process.env.PORT || 4000;
 

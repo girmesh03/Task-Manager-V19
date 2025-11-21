@@ -1,12 +1,16 @@
 import mongoose from "mongoose";
+import mongoosePaginate from "mongoose-paginate-v2";
 import softDeletePlugin from "./plugins/softDelete.js";
+import {
+  ORGANIZATION_SIZES_ARRAY,
+  PLATFORM_ORGANIZATION_ID,
+} from "../constants/index.js";
 
 const organizationSchema = new mongoose.Schema(
   {
     name: {
       type: String,
       required: [true, "Organization name is required"],
-      // unique: true,
       trim: true,
       maxlength: [100, "Organization name cannot exceed 100 characters"],
     },
@@ -18,7 +22,6 @@ const organizationSchema = new mongoose.Schema(
     email: {
       type: String,
       required: [true, "Organization email is required"],
-      // unique: true,
       lowercase: true,
       trim: true,
       match: [
@@ -41,8 +44,8 @@ const organizationSchema = new mongoose.Schema(
     size: {
       type: String,
       enum: {
-        values: ["Small", "Medium", "Large", "Enterprise"],
-        message: "Size must be one of: Small, Medium, Large, Enterprise",
+        values: ORGANIZATION_SIZES_ARRAY,
+        message: `Size must be one of: ${ORGANIZATION_SIZES_ARRAY.join(", ")}`,
       },
       required: [true, "Organization size is required"],
     },
@@ -70,7 +73,8 @@ const organizationSchema = new mongoose.Schema(
   }
 );
 
-// Apply soft delete plugin with cascade options
+// Apply plugins
+organizationSchema.plugin(mongoosePaginate);
 organizationSchema.plugin(softDeletePlugin, {
   cascadeDelete: [
     { model: "Department", field: "organization", deletedBy: true },
@@ -83,8 +87,6 @@ organizationSchema.plugin(softDeletePlugin, {
 });
 
 // Indexes for better query performance
-// organizationSchema.index({ name: 1 });
-// organizationSchema.index({ email: 1 });
 organizationSchema.index({ industry: 1 });
 organizationSchema.index({ size: 1 });
 organizationSchema.index({ createdAt: -1 });
@@ -115,7 +117,7 @@ organizationSchema.pre("save", function (next) {
 
 // Static method to find platform organization
 organizationSchema.statics.findPlatformOrganization = function () {
-  return this.findById("000000000000000000000000");
+  return this.findById(PLATFORM_ORGANIZATION_ID());
 };
 
 // Static method to find customer organizations (excluding platform)
@@ -124,13 +126,13 @@ organizationSchema.statics.findCustomerOrganizations = function (
 ) {
   return this.find({
     ...conditions,
-    _id: { $ne: mongoose.Types.ObjectId("000000000000000000000000") },
+    _id: { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID()) },
   });
 };
 
 // Instance method to check if this is the platform organization
 organizationSchema.methods.isPlatformOrganization = function () {
-  return this._id.toString() === "000000000000000000000000";
+  return this._id.toString() === PLATFORM_ORGANIZATION_ID();
 };
 
 const Organization = mongoose.model("Organization", organizationSchema);

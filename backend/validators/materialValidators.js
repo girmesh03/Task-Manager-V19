@@ -16,7 +16,7 @@ import { VALIDATION_LIMITS, REGEX_PATTERNS } from "../constants/index.js";
  * Validation rules for material ID parameter
  */
 export const validateMaterialId = [
-  param("id")
+  param("materialId")
     .custom((value) => {
       if (!isValidObjectId(value)) {
         throw new Error("Invalid material ID format");

@@ -1,5 +1,11 @@
 import mongoose from "mongoose";
+import mongoosePaginate from "mongoose-paginate-v2";
 import softDeletePlugin from "./plugins/softDelete.js";
+import {
+  NOTIFICATION_TYPES_ARRAY,
+  NOTIFICATION_PRIORITY_ARRAY,
+  NOTIFICATION_PRIORITY,
+} from "../constants/index.js";
 
 const notificationSchema = new mongoose.Schema(
   {
@@ -37,10 +43,12 @@ const notificationSchema = new mongoose.Schema(
     priority: {
       type: String,
       enum: {
-        values: ["low", "medium", "high", "urgent"],
-        message: "Priority must be one of: low, medium, high, urgent",
+        values: NOTIFICATION_PRIORITY_ARRAY,
+        message: `Priority must be one of: ${NOTIFICATION_PRIORITY_ARRAY.join(
+          ", "
+        )}`,
       },
-      default: "medium",
+      default: NOTIFICATION_PRIORITY.MEDIUM,
     },
     recipient: {
       type: mongoose.Schema.Types.ObjectId,
@@ -132,7 +140,8 @@ const notificationSchema = new mongoose.Schema(
   }
 );
 
-// Apply soft delete plugin
+// Apply plugins
+notificationSchema.plugin(mongoosePaginate);
 notificationSchema.plugin(softDeletePlugin);
 // Indexes for better query performance
 notificationSchema.index({ recipient: 1, isRead: 1, createdAt: -1 });
@@ -210,7 +219,6 @@ notificationSchema.statics.getCountsForUser = async function (userId) {
     {
       $match: {
         recipient: mongoose.Types.ObjectId(userId),
-        isDeleted: { $ne: true },
       },
     },
     {
@@ -292,7 +300,10 @@ notificationSchema.methods.markRealTimeSent = function () {
 
 // Instance method to check if notification is urgent
 notificationSchema.methods.isUrgent = function () {
-  return this.priority === "urgent" || this.priority === "high";
+  return (
+    this.priority === NOTIFICATION_PRIORITY.URGENT ||
+    this.priority === NOTIFICATION_PRIORITY.HIGH
+  );
 };
 
 const Notification = mongoose.model("Notification", notificationSchema);

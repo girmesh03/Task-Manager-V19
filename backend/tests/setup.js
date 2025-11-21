@@ -1,9 +1,17 @@
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Load environment variables for tests
-dotenv.config();
+dotenv.config({ path: join(__dirname, "..", ".env") });
+
+// Set timezone to UTC for consistent testing
+process.env.TZ = "UTC";
 
 let mongoServer;
 

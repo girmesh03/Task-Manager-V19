@@ -1,5 +1,11 @@
 import mongoose from "mongoose";
+import mongoosePaginate from "mongoose-paginate-v2";
 import softDeletePlugin from "./plugins/softDelete.js";
+import {
+  TASK_ACTIVITY_STATUS_ARRAY,
+  TASK_ACTIVITY_STATUS,
+} from "../constants/index.js";
+import { nowUTC } from "../utils/timezoneUtils.js";
 
 const taskActivitySchema = new mongoose.Schema(
   {
@@ -18,12 +24,13 @@ const taskActivitySchema = new mongoose.Schema(
     status: {
       type: String,
       enum: {
-        values: ["Not Started", "In Progress", "Completed", "Blocked"],
-        message:
-          "Status must be one of: Not Started, In Progress, Completed, Blocked",
+        values: TASK_ACTIVITY_STATUS_ARRAY,
+        message: `Status must be one of: ${TASK_ACTIVITY_STATUS_ARRAY.join(
+          ", "
+        )}`,
       },
       required: [true, "Status is required"],
-      default: "Not Started",
+      default: TASK_ACTIVITY_STATUS.NOT_STARTED,
     },
     task: {
       type: mongoose.Schema.Types.ObjectId,
@@ -67,7 +74,8 @@ const taskActivitySchema = new mongoose.Schema(
   }
 );
 
-// Apply soft delete plugin
+// Apply plugins
+taskActivitySchema.plugin(mongoosePaginate);
 taskActivitySchema.plugin(softDeletePlugin, {
   cascadeDelete: [
     { model: "Attachment", field: "attachedTo", deletedBy: true },
@@ -116,9 +124,9 @@ taskActivitySchema.pre("save", async function (next) {
 // Pre-save middleware to set completedAt when status changes to Completed
 taskActivitySchema.pre("save", function (next) {
   if (this.isModified("status")) {
-    if (this.status === "Completed" && !this.completedAt) {
-      this.completedAt = new Date();
-    } else if (this.status !== "Completed") {
+    if (this.status === TASK_ACTIVITY_STATUS.COMPLETED && !this.completedAt) {
+      this.completedAt = nowUTC();
+    } else if (this.status !== TASK_ACTIVITY_STATUS.COMPLETED) {
       this.completedAt = null;
     }
   }
@@ -145,7 +153,7 @@ taskActivitySchema.statics.findByUser = function (userId, conditions = {}) {
 taskActivitySchema.methods.isOverdue = function () {
   // An activity is considered overdue if the parent task is overdue and this activity is not completed
   return (
-    this.status !== "Completed" &&
+    this.status !== TASK_ACTIVITY_STATUS.COMPLETED &&
     this.task &&
     this.task.isOverdue &&
     this.task.isOverdue()

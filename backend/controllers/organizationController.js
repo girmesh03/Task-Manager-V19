@@ -10,13 +10,19 @@ import Department from "../models/Department.js";
 import User from "../models/User.js";
 import CustomError from "../utils/CustomError.js";
 import { PLATFORM_ORGANIZATION_ID } from "../constants/index.js";
+import {
+  extractUserContext,
+  extractResourceIds,
+  createPaginationOptions,
+  createPaginationResponse,
+} from "../utils/controllerHelpers.js";
 
 /**
  * Get all organizations (Platform admins only)
  * @route GET /api/organizations
  * @access Private (Platform SuperAdmin only)
  */
-export const getOrganizations = asyncHandler(async (req, res) => {
+export const getOrganizations = asyncHandler(async (req, res, next) => {
   const {
     page = 1,
     limit = 20,
@@ -33,11 +39,14 @@ export const getOrganizations = asyncHandler(async (req, res) => {
     const filters = {};
 
     // Exclude platform organization from customer organization listings
-    filters._id = { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID) };
+    filters._id = { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID()) };
 
-    // Include/exclude deleted organizations
+    // Include/exclude deleted organizations - use soft delete plugin methods
+    let query = Organization.find(filters);
     if (!includeDeleted) {
-      filters.isDeleted = { $ne: true };
+      // Default behavior - soft delete plugin will handle this automatically
+    } else {
+      query = Organization.findWithDeleted(filters);
     }
 
     // Search filter
@@ -59,48 +68,35 @@ export const getOrganizations = asyncHandler(async (req, res) => {
       filters.industry = { $regex: industry, $options: "i" };
     }
 
-    // Build sort object
-    const sortOptions = {};
-    const sortDirection = sortOrder === "asc" || sortOrder === "1" ? 1 : -1;
-    sortOptions[sortBy] = sortDirection;
-
-    // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    // Create pagination options
+    const paginationOptions = createPaginationOptions(req, {
+      populate: [
+        {
+          path: "createdBy",
+          select: "firstName lastName email",
+        },
+      ],
+    });
 
     // Execute query with pagination
-    const [organizations, totalCount] = await Promise.all([
-      Organization.find(filters)
-        .populate("createdBy", "firstName lastName email")
-        .sort(sortOptions)
-        .skip(skip)
-        .limit(parseInt(limit))
-        .lean(),
-      Organization.countDocuments(filters),
-    ]);
+    const result = await Organization.paginate(filters, paginationOptions);
 
-    // Calculate pagination info
-    const totalPages = Math.ceil(totalCount / parseInt(limit));
-    const hasNextPage = page < totalPages;
-    const hasPrevPage = page > 1;
+    // Create standardized response
+    const response = createPaginationResponse(result);
 
     res.status(200).json({
       success: true,
       data: {
-        organizations,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages,
-          totalCount,
-          limit: parseInt(limit),
-          hasNextPage,
-          hasPrevPage,
-        },
+        organizations: response.docs,
+        pagination: response.pagination,
       },
     });
   } catch (error) {
     console.error("Get organizations error:", error);
-    throw CustomError.internalServer(
-      "Failed to retrieve organizations. Please try again."
+    return next(
+      CustomError.internalServer(
+        "Failed to retrieve organizations. Please try again."
+      )
     );
   }
 });
@@ -110,14 +106,18 @@ export const getOrganizations = asyncHandler(async (req, res) => {
  * @route GET /api/organizations/:organizationId
  * @access Private (Platform SuperAdmin only)
  */
-export const getOrganizationById = asyncHandler(async (req, res) => {
-  const { organizationId } = req.params;
+export const getOrganizationById = asyncHandler(async (req, res, next) => {
+  // Standard pattern for tenant and caller identification
+  const { callerId } = extractUserContext(req);
+
+  // Extract resource ID from parameters (required for resource identification)
+  const { organizationId } = extractResourceIds(req, ["organizationId"]);
 
   try {
     // Prevent access to platform organization details
-    if (organizationId === PLATFORM_ORGANIZATION_ID) {
-      throw CustomError.forbidden(
-        "Cannot access platform organization details."
+    if (organizationId === PLATFORM_ORGANIZATION_ID()) {
+      return next(
+        CustomError.forbidden("Cannot access platform organization details.")
       );
     }
 
@@ -126,27 +126,23 @@ export const getOrganizationById = asyncHandler(async (req, res) => {
       .populate({
         path: "departments",
         select: "name description createdAt usersCount",
-        match: { isDeleted: { $ne: true } },
       });
 
     if (!organization) {
-      throw CustomError.notFound("Organization not found.");
+      return next(CustomError.notFound("Organization not found."));
     }
 
     // Get additional statistics
     const [departmentCount, userCount, activeUserCount] = await Promise.all([
       Department.countDocuments({
         organization: organizationId,
-        isDeleted: { $ne: true },
       }),
       User.countDocuments({
         organization: organizationId,
-        isDeleted: { $ne: true },
       }),
       User.countDocuments({
         organization: organizationId,
         status: "online",
-        isDeleted: { $ne: true },
       }),
     ]);
 
@@ -182,7 +178,10 @@ export const getOrganizationById = asyncHandler(async (req, res) => {
  * @route POST /api/organizations
  * @access Private (Platform SuperAdmin only)
  */
-export const createOrganization = asyncHandler(async (req, res) => {
+export const createOrganization = asyncHandler(async (req, res, next) => {
+  // Standard pattern for tenant and caller identification
+  const { callerId } = extractUserContext(req);
+
   const { name, description, email, phone, address, size, industry, logo } =
     req.body;
 
@@ -190,7 +189,6 @@ export const createOrganization = asyncHandler(async (req, res) => {
     // Check if organization name already exists
     const existingOrgByName = await Organization.findOne({
       name,
-      isDeleted: { $ne: true },
     });
 
     if (existingOrgByName) {
@@ -202,7 +200,6 @@ export const createOrganization = asyncHandler(async (req, res) => {
     // Check if organization email already exists
     const existingOrgByEmail = await Organization.findOne({
       email: email.toLowerCase(),
-      isDeleted: { $ne: true },
     });
 
     if (existingOrgByEmail) {
@@ -221,7 +218,7 @@ export const createOrganization = asyncHandler(async (req, res) => {
       size,
       industry,
       logo,
-      createdBy: req.user._id,
+      createdBy: callerId,
     };
 
     const organization = await Organization.create(organizationData);
@@ -263,13 +260,17 @@ export const createOrganization = asyncHandler(async (req, res) => {
  * @route PUT /api/organizations/:organizationId
  * @access Private (Platform SuperAdmin only)
  */
-export const updateOrganization = asyncHandler(async (req, res) => {
-  const { organizationId } = req.params;
+export const updateOrganization = asyncHandler(async (req, res, next) => {
+  // Standard pattern for tenant and caller identification
+  const { callerId } = extractUserContext(req);
+
+  // Extract resource ID from parameters (required for resource identification)
+  const { organizationId } = extractResourceIds(req, ["organizationId"]);
   const updateData = req.body;
 
   try {
     // Prevent updating platform organization
-    if (organizationId === PLATFORM_ORGANIZATION_ID) {
+    if (organizationId === PLATFORM_ORGANIZATION_ID()) {
       throw CustomError.forbidden("Cannot update platform organization.");
     }
 
@@ -291,7 +292,6 @@ export const updateOrganization = asyncHandler(async (req, res) => {
       const existingOrgByName = await Organization.findOne({
         name: updateData.name,
         _id: { $ne: organizationId },
-        isDeleted: { $ne: true },
       });
 
       if (existingOrgByName) {
@@ -309,7 +309,6 @@ export const updateOrganization = asyncHandler(async (req, res) => {
       const existingOrgByEmail = await Organization.findOne({
         email: updateData.email.toLowerCase(),
         _id: { $ne: organizationId },
-        isDeleted: { $ne: true },
       });
 
       if (existingOrgByEmail) {
@@ -366,13 +365,17 @@ export const updateOrganization = asyncHandler(async (req, res) => {
  * @route DELETE /api/organizations/:organizationId
  * @access Private (Platform SuperAdmin only)
  */
-export const deleteOrganization = asyncHandler(async (req, res) => {
-  const { organizationId } = req.params;
+export const deleteOrganization = asyncHandler(async (req, res, next) => {
+  // Standard pattern for tenant and caller identification
+  const { callerId } = extractUserContext(req);
+
+  // Extract resource ID from parameters (required for resource identification)
+  const { organizationId } = extractResourceIds(req, ["organizationId"]);
   const { reason } = req.body;
 
   try {
     // Prevent deleting platform organization
-    if (organizationId === PLATFORM_ORGANIZATION_ID) {
+    if (organizationId === PLATFORM_ORGANIZATION_ID()) {
       throw CustomError.forbidden("Cannot delete platform organization.");
     }
 
@@ -387,7 +390,7 @@ export const deleteOrganization = asyncHandler(async (req, res) => {
     }
 
     // Perform soft delete (this will cascade to departments and users)
-    await organization.softDelete(req.user._id, reason);
+    await organization.softDelete(callerId);
 
     res.status(200).json({
       success: true,
@@ -410,13 +413,17 @@ export const deleteOrganization = asyncHandler(async (req, res) => {
  * @route POST /api/organizations/:organizationId/restore
  * @access Private (Platform SuperAdmin only)
  */
-export const restoreOrganization = asyncHandler(async (req, res) => {
-  const { organizationId } = req.params;
+export const restoreOrganization = asyncHandler(async (req, res, next) => {
+  // Standard pattern for tenant and caller identification
+  const { callerId } = extractUserContext(req);
+
+  // Extract resource ID from parameters (required for resource identification)
+  const { organizationId } = extractResourceIds(req, ["organizationId"]);
   const { reason } = req.body;
 
   try {
     // Prevent restoring platform organization
-    if (organizationId === PLATFORM_ORGANIZATION_ID) {
+    if (organizationId === PLATFORM_ORGANIZATION_ID()) {
       throw CustomError.forbidden("Cannot restore platform organization.");
     }
 
@@ -457,7 +464,7 @@ export const restoreOrganization = asyncHandler(async (req, res) => {
     }
 
     // Restore organization
-    await organization.restore(reason);
+    await organization.restore();
 
     // Get restored organization with populated data
     const restoredOrganization = await Organization.findById(
@@ -488,78 +495,80 @@ export const restoreOrganization = asyncHandler(async (req, res) => {
  * @route GET /api/organizations/statistics
  * @access Private (Platform SuperAdmin only)
  */
-export const getOrganizationStatistics = asyncHandler(async (req, res) => {
-  try {
-    const [
-      totalOrganizations,
-      activeOrganizations,
-      deletedOrganizations,
-      organizationsBySize,
-      recentOrganizations,
-    ] = await Promise.all([
-      // Total customer organizations (excluding platform)
-      Organization.countDocuments({
-        _id: { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID) },
-      }),
-      // Active customer organizations
-      Organization.countDocuments({
-        _id: { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID) },
-        isDeleted: { $ne: true },
-      }),
-      // Deleted customer organizations
-      Organization.countDocuments({
-        _id: { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID) },
-        isDeleted: true,
-      }),
-      // Organizations by size
-      Organization.aggregate([
-        {
-          $match: {
-            _id: { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID) },
-            isDeleted: { $ne: true },
+export const getOrganizationStatistics = asyncHandler(
+  async (req, res, next) => {
+    try {
+      const [
+        totalOrganizations,
+        activeOrganizations,
+        deletedOrganizations,
+        organizationsBySize,
+        recentOrganizations,
+      ] = await Promise.all([
+        // Total customer organizations (excluding platform)
+        Organization.countDocuments({
+          _id: { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID()) },
+        }),
+        // Active customer organizations
+        Organization.countDocuments({
+          _id: { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID()) },
+          isDeleted: { $ne: true },
+        }),
+        // Deleted customer organizations
+        Organization.countDocuments({
+          _id: { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID()) },
+          isDeleted: true,
+        }),
+        // Organizations by size
+        Organization.aggregate([
+          {
+            $match: {
+              _id: { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID()) },
+              isDeleted: { $ne: true },
+            },
           },
-        },
-        {
-          $group: {
-            _id: "$size",
-            count: { $sum: 1 },
+          {
+            $group: {
+              _id: "$size",
+              count: { $sum: 1 },
+            },
           },
-        },
-      ]),
-      // Recent organizations (last 30 days)
-      Organization.countDocuments({
-        _id: { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID) },
-        isDeleted: { $ne: true },
-        createdAt: {
-          $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-        },
-      }),
-    ]);
+        ]),
+        // Recent organizations (last 30 days)
+        Organization.countDocuments({
+          _id: { $ne: mongoose.Types.ObjectId(PLATFORM_ORGANIZATION_ID()) },
+          isDeleted: { $ne: true },
+          createdAt: {
+            $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+          },
+        }),
+      ]);
 
-    const statistics = {
-      totalOrganizations,
-      activeOrganizations,
-      deletedOrganizations,
-      recentOrganizations,
-      organizationsBySize: organizationsBySize.reduce((acc, item) => {
-        acc[item._id] = item.count;
-        return acc;
-      }, {}),
-    };
+      const statistics = {
+        totalOrganizations,
+        activeOrganizations,
+        deletedOrganizations,
+        recentOrganizations,
+        organizationsBySize: organizationsBySize.reduce((acc, item) => {
+          acc[item._id] = item.count;
+          return acc;
+        }, {}),
+      };
 
-    res.status(200).json({
-      success: true,
-      data: {
-        statistics,
-      },
-    });
-  } catch (error) {
-    console.error("Get organization statistics error:", error);
-    throw CustomError.internalServer(
-      "Failed to retrieve organization statistics. Please try again."
-    );
+      res.status(200).json({
+        success: true,
+        data: {
+          statistics,
+        },
+      });
+    } catch (error) {
+      console.error("Get organization statistics error:", error);
+      throw CustomError.internalServer(
+        "Failed to retrieve organization statistics. Please try again."
+      );
+    }
   }
-});
+);
 
 export default {
   getOrganizations,

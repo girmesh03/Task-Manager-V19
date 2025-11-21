@@ -7,21 +7,21 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "server": "nodemon server.js",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
-    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
+    "test": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --watch",
+    "test:coverage": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --coverage"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "devDependencies": {
+    "fast-check": "^4.3.0",
+    "jest": "^30.2.0",
+    "mongodb-memory-server": "^10.3.0",
     "morgan": "^1.10.1",
     "nodemon": "^3.1.11",
-    "jest": "^29.7.0",
-    "fast-check": "^3.15.0",
-    "mongodb-memory-server": "^9.1.4",
-    "supertest": "^6.3.4"
+    "supertest": "^7.1.4"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
